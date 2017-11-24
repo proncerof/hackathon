@@ -23,58 +23,110 @@
 
     <canvas id="player1"></canvas>
     <canvas id="player2"></canvas>
-    <button onclick="reloadPlayer1()">Recargar</button>
-    <button onclick="hitPlayer2()">Disparar al jugador 2</button>
-    <button onclick="player1Shoot()">Disparar</button>
-    <button onclick="player1Shield()">Cubrirse jugador 1</button>
+
 
 
 
 
     <script>
+        var loc = window.location;
+        if (loc.protocol === "https:") { wsUri = "wss:"; }
+        // This needs to point to the web socket in the Node-RED flow
+        // ... in this case it's ws/simple
+        wsUri += "//" + loc.host + loc.pathname.replace("page", "ws/socket");
+        let ws = new WebSocket(wsUri);
+
+
         let canvas1 = document.getElementById("player1");
         let canvas2 = document.getElementById("player2");
-        let bullet = document.getElementById("bullet");
-
-        let ctx1 = canvas1.getContext("2d");
-        let ctx2 = canvas2.getContext("2d");
 
         let game = new Game(canvas1, canvas2);
+
+        ws.onmessage = function (s) {
+            let action = JSON.parse(s.data).parts;
+
+            if (action.userId == 1) {
+                game.player1.setAction(action.name);
+            } else
+                game.player2.setAction(action.name);
+
+        }
+
         game.play();
 
-        function reloadPlayer1() {
-            game.player1.reload();
-            game.update();
-        }
-
-        function hitPlayer2() {
-            game.player2.hitted();
-            game.update();
-        }
-
-        function player1Shoot() {
-            game.player2.shoot();
-            game.update();
-        }
-
-        function player1Shield() {
-            game.player1.shield();
-            game.update();
-        }
+       
 
         function Game(canvas1, canvas2) {
             this.player1 = new Player(canvas1);
             this.player2 = new Player(canvas2);
 
-            this.play = function () {
-                //while(this.player1.isAlive() && this.player2.isAlive()){
-                this.update();
-            }
-
             this.update = function () {
                 this.player1.show();
                 this.player2.show();
             }
+
+
+            this.play = async function () {
+               while (this.player1.isAlive() && this.player2.isAlive()) {
+                    while (!this.player1.action || !this.player2.action) {
+                        this.update();
+                        await sleep(1000);
+                    }
+
+                    console.log(this.player2.action)
+                    console.log(this.player1.action)
+                    switch (this.player1.action) {
+                        case 'Shoot':
+                            this.player1.shoot();
+                            if (this.player2.action != 'Shield')
+                            this.player2.hitted();
+                            
+                                this.update();
+                            break;
+                        case 'Shield':
+                            this.player1.shield();
+                            this.update();
+                            break;
+                        case 'Charge':
+                            this.player1.reload();
+                            this.update();
+                            break;
+                    }
+                    switch (this.player2.action) {
+                        case 'Shoot':
+                            this.player2.shoot();
+                            if (this.player1.action != 'Shield')
+                               this.player1.hitted();
+                                this.update();
+                            break;
+                        case 'Shield':
+                        this.player2.shield();
+                            this.update();
+                            break;
+                        case 'Charge':
+                        this.player2.reload();
+                            this.update();
+                            break;
+                    }
+                    this.update();
+
+                    this.player1.action = undefined;
+                    this.player2.action = undefined;
+
+                    sleep(1500);
+
+                }
+                if(this.player1.isAlive())
+                    alert("Gana el jugador 1");
+                else
+                    alert("Gana el jugador 2");
+            }
+
+            function sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+
         }
 
 
@@ -84,6 +136,7 @@
             this.ctx = canvas.getContext("2d");
             this.bang = new Bang();
             this.escudo = new Shield(this.ctx);
+            this.action;
 
             this.show = function () {
                 for (let bullet of this.bullets) {
@@ -117,7 +170,6 @@
 
             this.shoot = function () {
                 if (this.bullets.length <= 0) {
-                    alert("No tienes balas");
                     return;
                 }
 
@@ -133,7 +185,11 @@
             }
 
             this.isAlive = function () {
-                return this.lifes > 0;
+                return this.lifes.length > 0;
+            }
+
+            this.setAction = function (action) {
+                this.action = action;
             }
         }
 
